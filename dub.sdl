@@ -1,0 +1,4 @@
+name "parseopts"
+description "A basic command line options parser written in D"
+copyright "Copyright © 2015 ,Mitchell Grout"
+authors "Mitchell Grout"
