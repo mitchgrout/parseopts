@@ -11,7 +11,7 @@ struct MyData {
 	bool daemon;
 
 	@shortFlag('p')
-	string path;
+	string path = "/var/";
 }
 
 void main(string[] args){
@@ -22,7 +22,6 @@ void main(string[] args){
 	}
 
 	MyData result = parseOpts!MyData(args, config.bundling);
-	writefln("result.verbose = %s", result.verbose);
-	writefln("result.daemon = %s", result.daemon);
-	writefln("result.path = %s", result.path);
+	foreach(member; __traits(allMembers, MyData))
+		writefln("result.%s = %s", member, __traits(getMember, result, member));
 }
