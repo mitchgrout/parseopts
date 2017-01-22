@@ -1,28 +1,61 @@
 module parseopts.templates;
 
-private import parseopts.attributes;
-
+import parseopts.attributes;
 import std.traits : hasUDA, getUDAs;
 import std.meta : Alias;
 
+
+///Gets Type.symbol
 alias getSymbol(Type, string symbol) = Alias!(__traits(getMember, Type, symbol));
 
+
+///Determine if Type.symbol is an option
 enum isOption(Type, string symbol) = !hasUDA!(getSymbol!(Type, symbol), ignore) &&
 				     is(typeof(getSymbol!(Type, symbol) = typeof(getSymbol!(Type, symbol)).init));
 
+
+///Get the long flag corresponding to the given symbol.
+///If the symbol does not have an explicit long flag, it will
+///be --symbol
 template getLongFlag(Type, string symbol)
+    if(isOption!(Type, symbol))
 {
-	static if(hasUDA!(getSymbol!(Type, symbol), longFlag))
-		enum getLongFlag = getUDAs!(getSymbol!(Type, symbol), longFlag)[0].value;
-	else
+    import std.format : format;
+
+    //Get all of the longFlag UDAs associated with Type.symbol
+    alias UDAlist = getUDAs!(getSymbol!(Type, symbol), longFlag);
+        
+    //Having more than one is ambiguous, fail in that case.
+    static assert(UDAlist.length <= 1, "%s.%s must have either zero or one long flags, not %s"
+                                       .format(Type.stringof, symbol, UDAlist.length));
+
+    static if(UDAlist.length == 1)
+		enum getLongFlag = UDAlist[0].value;
+    else
 		enum getLongFlag = "--" ~ symbol;
 }
 
-enum hasShortFlag(Type, string symbol) = hasUDA!(getSymbol!(Type, symbol), shortFlag);
 
-enum getShortFlag(Type, string symbol) = getUDAs!(getSymbol!(Type, symbol), shortFlag)[0].value;
+///Determine if Type.symbol has a short flag
+template hasShortFlag(Type, string symbol)
+    if(isOption!(Type, symbol))
+{
+    enum hasShortFlag = hasUDA!(getSymbol!(Type, symbol), shortFlag);
+}
 
+
+///Gets the short flag associated with Type.symbol
+template getShortFlag(Type, string symbol)
+    if(hasShortFlag!(Type, symbol))
+{
+    enum getShortFlag = getUDAs!(getSymbol!(Type, symbol), shortFlag)[0].value;
+}
+
+
+///Get the help text associated with Type.symbol. If no help text
+///is explicitly given, it will default to stating no text is available.
 template getHelpText(Type, string symbol)
+    if(isOption!(Type, symbol))
 {
 	static if(hasUDA!(getSymbol!(Type, symbol), help))
 		enum getHelpText = getUDAs!(getSymbol!(Type, symbol), help)[0].value;
