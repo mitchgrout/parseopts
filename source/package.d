@@ -1,10 +1,12 @@
 module parseopts;
 
+
 public import parseopts.attributes;
 public import parseopts.templates;
 
-//import std.traits : hasUDA, getUDAs;
+
 import std.meta : Alias, staticMap, Filter;
+
 
 ///Configuration for the parser
 enum Config
@@ -13,21 +15,25 @@ enum Config
 	none = 0,
 
 	///Indicates that several short flags can be expressed as a single
-	///flag, e.g. "-abc" is equivalent to "-a -b c"
-	bundling = 1,
+	///flag, e.g. "-abc" is equivalent to "-a -b c".
+    ///The short flags must be boolean in order to be packed this way,
+    ///i.e. -i 1 -j 1 cannot be packed as -ij 1.
+	bundling = 1 << 0,
 
-	///Arguments that are not recognized are ignored
-	passThrough = 2,
+	///Arguments that are not recognized are ignored without error,
+	///e.g. if --flag is not a known flag, no error is raised.
+    passThrough = 1 << 1,
 
 	///Indicates that the parser should throw an exception and stop when
 	///it encounters the first item that does not look like an option,
 	///e.g. ["--flag", "value", "badoption"] will throw an exception
-	///when "badoption" is reached
-	stopOnNonOption = 4,
+	///when "badoption" is reached.
+	stopOnNonOption = 1 << 2,
 
-	///Parsed arguments will be replaced with null when they are used
-	consume = 8,
+	///Parsed arguments will be replaced with null when they are used.
+	consume = 1 << 3,
 }
+
 
 ///
 class ParserException : Exception
@@ -36,17 +42,19 @@ class ParserException : Exception
 	mixin basicExceptionCtors;
 }
 
+
 ///
 Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	if(is(Type == struct) ||
-	   (is(Type == class) &&
-	    __traits(compiles, new Type)))
+	   (is(Type == class) && __traits(compiles, new Type)))
 {
 	import std.regex : ctRegex, match, regex;
 	import std.meta : ApplyLeft;
+    debug import std.stdio;
 
-	//My VPS is too shit to compile these regexes
-	version(none)
+	//Add a custom version to decide between compile-time regexes (memory intensive)
+    //or simpler runtime regexes
+    version(all) 
 	{
 		alias regShortFlag = ctRegex!`^\-[a-zA-Z]+$`; //originally [\w\d]
 		alias regLongFlag = ctRegex!`^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`;
@@ -57,6 +65,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		auto regLongFlag = regex(`^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`);
 	}
 
+    //Instantiate the config object
 	Type res;
 	static if(is(Type == class))
 		res = new Type;
@@ -66,30 +75,19 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	if(args && !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		args = args[1..$];
 
-	bool hasBundling = (Config.bundling & cfg) != Config.none;
-	bool hasPassThrough = (Config.passThrough & cfg) != Config.none;
-	bool shouldStopOnNonOption = (Config.stopOnNonOption & cfg) != Config.none;
-	bool shouldConsume = (Config.consume & cfg) != Config.none;
+    //Extract flags
+	bool hasBundling = !!(Config.bundling & cfg);
+	bool hasPassThrough = !!(Config.passThrough & cfg);
+	bool shouldStopOnNonOption = !!(Config.stopOnNonOption & cfg);
+	bool shouldConsume = !!(Config.consume & cfg);
 
-	debug
-	{
-		import std.stdio : writeln;
-		writeln("Args: ", args);
-		writeln("Has bundling: ", hasBundling);
-		writeln("Has passthrough: ", hasPassThrough);
-		writeln("Has stop on non-option: ", shouldStopOnNonOption);
-		writeln("Has consume: ", shouldConsume);
-		writeln();
-	}
-
-	void handle(ref string flag, ref string value)
+    //Helper function that deals with parsing a single flag and potential value
+    void handle()(ref string flag, auto ref string value)
 	{
 		import std.conv : to;
 		import std.format : format;
 		import std.traits : hasUDA, getUDAs;
 		import std.meta : Alias, Filter;
-
-		debug writeln("Flag: ", flag, " | Value: ", value);
 
 		flag_switch:
 		switch(flag)
@@ -117,6 +115,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 						__traits(getMember, res, varName) = value.to!(SymbolType);
 					break flag_switch;
 			}
+
 			default:
 				if(hasPassThrough)
 					return; //Return instead of break to avoid consuming args even though they're invalid
@@ -146,11 +145,6 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		//         2) the first two chars [guaranteed to exist] look like a short flag
 		if(args[0].length > 2 && args[0][0..2].match(regShortFlag))
 		{
-			//TODO: Make this better, while also respecting the fact
-			//that handle will be potentially consuming our input
-			//i.e. if the input is -abc, and only -a is valid, we should be left with -bc
-			string dummy = null;
-
 			//This string will be populated
 			string result;
 			if(shouldConsume)
@@ -162,7 +156,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 			foreach(ref flag; args[0][1..$])
 			{
 				string properFlag = ['-', flag];
-				handle(properFlag, dummy);
+				handle(properFlag, null);
 
 				//Flag has NOT consumed
 				if(shouldConsume && properFlag !is null)
@@ -171,28 +165,17 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 				}
 			}
 
-			if(shouldConsume)
-			{
-				//All flags have been consumed, so result is simply "-"
-				if(result.length <= 1)
-				{
-					//Consume
-					args[0] = null;
-				}
-				else
-				{
-					args[0] = result;
-				}
-			}
-			continue;
+            //If all that is left is "-", nullify the argument
+            if(shouldConsume)
+                args[0] = result.length <= 1? null : result;
+			
+            continue;
 		}
 
 		//Either we only have one argument left, or the NEXT argument is a flag
 		if(args.length == 1 || args[1].match(regShortFlag) || args[1].match(regLongFlag))
 		{
-			//Because `handle` accepts args by ref, we need a dummy var for our null
-			string dummy = null;
-			handle(args[0], dummy);
+			handle(args[0], null);
 			args = args[1..$];
 		}
 		else
