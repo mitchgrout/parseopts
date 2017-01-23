@@ -104,14 +104,10 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
                 default: break;
             }
 
-        import std.stdio : writeln;
-        set[].writeln;
-
         //Raise an exception if any arg was not set
         if(set[].any!(k => !k))
             throw new ParserException("Missing required args");
     }
-
 
     //Helper function that deals with parsing a single flag and potential value
     void handle()(ref string flag, auto ref string value)
@@ -121,7 +117,13 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		import std.traits : hasUDA, getUDAs;
 		import std.meta : Alias, Filter;
 
-		flag_switch:
+        debug
+        {
+            import std.stdio : writeln;
+            writeln(flag, " - ", value);
+        }
+
+        flag_switch:
 		switch(flag)
 		{
 			/*static*/ foreach(varName; Filter!(ApplyLeft!(isOption, Type), __traits(allMembers, Type)))
@@ -144,8 +146,9 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 					else static if(is(SymbolType == string))
 						__traits(getMember, res, varName) = value;
 					else
-						__traits(getMember, res, varName) = value.to!(SymbolType);
-					break flag_switch;
+						try __traits(getMember, res, varName) = value.to!(SymbolType);
+					    catch(Exception) throw new ParserException("Could not convert "~value~ "to an int");
+                    break flag_switch;
 			}
 
 			default:
@@ -177,12 +180,16 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		//         2) the first two chars [guaranteed to exist] look like a short flag
 		if(args[0].length > 2 && args[0][0..2].match(regShortFlag))
 		{
+            if(!hasBundling)
+                throw new ParserException("Bundling was disabled, but found bundled arguments");
+
 			//This string will be populated
 			string result;
 			if(shouldConsume)
 			{
 				result.reserve(args[0].length);
-				result ~= '-'; //no cost, since we've preallocated enough space
+                //We can now effectively copy all of args[0] to result without causing a reallocation
+                result ~= '-';
 			}
 
 			foreach(ref flag; args[0][1..$])
@@ -190,17 +197,17 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 				string properFlag = ['-', flag];
 				handle(properFlag, null);
 
-				//Flag has NOT consumed
+				//Flag has NOT been consumed
 				if(shouldConsume && properFlag !is null)
-				{
 					result ~= flag;
-				}
 			}
 
             //If all that is left is "-", nullify the argument
             if(shouldConsume)
                 args[0] = result.length <= 1? null : result;
-			
+		
+            args = args[1..$];
+
             continue;
 		}
 
@@ -262,35 +269,22 @@ template helpText(Type, size_t bufferWidth = 80)
 			.array;
 }
 
-version(unittest) import std.exception;
 
-version(unittest)
-struct TestConfig
-{
-	@shortFlag('a') bool all; //
-
-	@shortFlag('v') int verbose; //
-
-	@shortFlag('p') string path; //
-
-	@longFlag("recurse") bool shouldRecurse; //
-
-	@shortFlag('c') @longFlag("color") Colour textColour; //
-}
-
-version(unittest)
-enum Colour
-{
-	white,
-	red,
-	blue,
-	green
-}
-
-//Config.none
+///Default configuration for the parser
 unittest
 {
-	auto obj = parseOpts!TestConfig(["./prog", "--all", "-v", "10", "--recurse"]);
+    enum Colour { white, red, blue, green }
+    
+    struct TestConfig
+    {
+        @shortFlag('a') bool all;
+        @shortFlag('v') int verbose;
+        @shortFlag('p') string path;
+        @longFlag("recurse") bool shouldRecurse;
+        @shortFlag('c') @longFlag("color") Colour textColour;
+    }
+	
+    auto obj = parseOpts!TestConfig(["./prog", "--all", "-v", "10", "--recurse"]);
 	assert(obj == TestConfig(true, 10, null, true, Colour.white));
 
 	obj = parseOpts!TestConfig(["--recurse", "-c", "green", "-v", "-1"]);
@@ -300,24 +294,26 @@ unittest
 	assert(obj == TestConfig(false, 0, "/tmp/", false, Colour.white));
 }
 
-//Test the @required attribute
+
+///Test Config.bundling
 unittest
 {
+    import std.exception;
+
     struct TestConfig
     {
-        int a;
-        int b;
-        int c;
-        @required int d;
+        @shortFlag('a') bool a;
+        @shortFlag('b') bool b;
+        @shortFlag('c') bool c;
+        @shortFlag('d') int d;
     }
 
-    assertNotThrown!ParserException(
-    {
-        cast(void)parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]);
-    });
+    assert(parseOpts!TestConfig(["-a", "-b", "-c"]) == TestConfig(true, true, true, 0));
 
-    assertThrown!ParserException(
-    {
-        cast(void)parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "-1"]);
-    });
+    assert(parseOpts!TestConfig(["-abc"], Config.bundling) == TestConfig(true, true, true, 0));
+    
+    assert(parseOpts!TestConfig(["-cab"], Config.bundling) == TestConfig(true, true, true, 0));
+
+    assertThrown!ParserException(parseOpts!TestConfig(["-abcd"], Config.bundling));
 }
+
