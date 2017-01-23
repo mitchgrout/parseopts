@@ -45,8 +45,8 @@ class ParserException : Exception
 
 ///
 Type parseOpts(Type)(string[] args, Config cfg = Config.none)
-	if(is(Type == struct) ||
-	   (is(Type == class) && __traits(compiles, new Type)))
+	if((is(Type == struct) && __traits(compiles, { Type t; })) ||
+	   (is(Type == class)  && __traits(compiles, new Type)))
 {
 	import std.regex : ctRegex, match, regex;
 	import std.meta : ApplyLeft;
@@ -80,6 +80,38 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	bool hasPassThrough = !!(Config.passThrough & cfg);
 	bool shouldStopOnNonOption = !!(Config.stopOnNonOption & cfg);
 	bool shouldConsume = !!(Config.consume & cfg);
+
+    //Pass over all required args and determine if args contains all of them
+    alias requiredArgs = Filter!(ApplyLeft!(isRequired, Type), __traits(allMembers, Type));
+    static if(requiredArgs.length)
+    {
+        import std.algorithm : any, filter;
+
+        //Reserve a bool for each required arg
+        bool[requiredArgs.length] set = false;
+        
+        foreach(item; args.filter!(k => k.match(regShortFlag) || k.match(regLongFlag)))
+            switch(item)
+            {
+                //Match each arg with a unique id
+                foreach(idx, arg; requiredArgs)
+                {
+                    case arg:
+                        set[idx] = true;
+                        break;
+                }
+                //Flag isnt a required option, skip it
+                default: break;
+            }
+
+        import std.stdio : writeln;
+        set[].writeln;
+
+        //Raise an exception if any arg was not set
+        if(set[].any!(k => !k))
+            throw new ParserException("Missing required args");
+    }
+
 
     //Helper function that deals with parsing a single flag and potential value
     void handle()(ref string flag, auto ref string value)
@@ -230,6 +262,8 @@ template helpText(Type, size_t bufferWidth = 80)
 			.array;
 }
 
+version(unittest) import std.exception;
+
 version(unittest)
 struct TestConfig
 {
@@ -264,4 +298,26 @@ unittest
 
 	obj = parseOpts!TestConfig(["./prog", "--path", "/tmp/"]);
 	assert(obj == TestConfig(false, 0, "/tmp/", false, Colour.white));
+}
+
+//Test the @required attribute
+unittest
+{
+    struct TestConfig
+    {
+        int a;
+        int b;
+        int c;
+        @required int d;
+    }
+
+    assertNotThrown!ParserException(
+    {
+        cast(void)parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]);
+    });
+
+    assertThrown!ParserException(
+    {
+        cast(void)parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "-1"]);
+    });
 }

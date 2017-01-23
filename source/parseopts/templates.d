@@ -14,6 +14,14 @@ enum isOption(Type, string symbol) = !hasUDA!(getSymbol!(Type, symbol), ignore) 
 				     is(typeof(getSymbol!(Type, symbol) = typeof(getSymbol!(Type, symbol)).init));
 
 
+///Determine if Type.symbol has the required flag
+template isRequired(Type, string symbol)
+    if(isOption!(Type, symbol))
+{
+    enum isRequired = hasUDA!(getSymbol!(Type, symbol), required);
+}
+
+
 ///Get the long flag corresponding to the given symbol.
 ///If the symbol does not have an explicit long flag, it will
 ///be --symbol
