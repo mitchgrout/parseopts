@@ -56,7 +56,13 @@ template hasShortFlag(Type, string symbol)
 template getShortFlag(Type, string symbol)
     if(hasShortFlag!(Type, symbol))
 {
-    enum getShortFlag = getUDAs!(getSymbol!(Type, symbol), shortFlag)[0].value;
+    //Get all of the shortFlag UDAs associated with Type.symbol
+    alias UDAlist = getUDAs!(getSymbol!(Type, symbol), shortFlag);
+
+    static assert(UDAlist.length == 1, "%s.%s must have one short flag, not %s"
+                                       .format(Type.stringof, symbol, UDAlist.length));
+
+    enum getShortFlag = UDAlist[0].value; 
 }
 
 

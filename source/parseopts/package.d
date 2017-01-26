@@ -149,6 +149,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 					throw new ParserException(`Unknown flag "%s"`.format(flag));
 		}
 
+        //Nullify the items if configured to consume args
 		if(shouldConsume)
 			flag = value = null;
 	}
@@ -228,7 +229,7 @@ template helpText(Type, size_t bufferWidth = 80)
 	import std.algorithm : joiner, map, max, reduce;
 	import std.format : format;
 
-	//The help of the program itself
+	//The help text of the program itself
 	static if(hasUDA!(Type, help))
 		enum typeHelpText = getUDAs!(Type, help)[0].value;
 	else
@@ -238,7 +239,13 @@ template helpText(Type, size_t bufferWidth = 80)
 	alias flags = Filter!(ApplyLeft!(isOption, Type), __traits(allMembers, Type));
 
 	//All of the short flag strings
-	alias shortFlags = staticMap!(ApplyLeft!(getShortFlag, Type), Filter!(ApplyLeft!(hasShortFlag, Type), __traits(allMembers, Type)));
+    template helpTextGetShortFlag(Type, string symbol)
+    {
+        static if(hasShortFlag!(Type, symbol)) enum helpTextGetShortFlag = getShortFlag!(Type, symbol) ~ ',';
+        else enum helpTextGetShortFlag = "   ";
+    }
+	//alias shortFlags = staticMap!(ApplyLeft!(getShortFlag, Type), Filter!(ApplyLeft!(hasShortFlag, Type), __traits(allMembers, Type)));
+    alias shortFlags = staticMap!(ApplyLeft!(helpTextGetShortFlag, Type), __traits(allMembers, Type));
 
 	//All of the long flag strings
 	alias longFlags = staticMap!(ApplyLeft!(getLongFlag, Type), flags);
@@ -253,13 +260,40 @@ template helpText(Type, size_t bufferWidth = 80)
 			.reduce!max;
 
 	//Format should be:
+    //Program help text
+    //
 	//  -s, --long-flag  the description goes here
 	enum helpText = typeHelpText
 			.chain("\n\n")
 			.chain( zip(only(shortFlags), only(longFlags), only(flagHelpText))
-				.map!(t => format("  %s, %s%s  %s", t[0], t[1], ' '.repeat(maxWidth - t[1].length), t[2]))
+				.map!(t => format("  %s %s%s  %s", t[0], t[1], ' '.repeat(maxWidth - t[1].length), t[2]))
 				.joiner("\n"))
 			.array;
+}
+
+///
+unittest
+{
+    @help("Curl-like utility program")
+    struct ProgramConfig
+    {
+        @help("The URL to connect to")
+        @required string hostname;
+
+        @help("The port to connect to. Default is 22")
+        @shortFlag('p') int port = 22;
+        
+        @help("Whether or not we should use TLS")
+        @shortFlag('H') @longFlag("use-tls") bool useTLS; 
+    }
+
+    assert(helpText!ProgramConfig ==
+`Curl-like utility program
+
+      --hostname  The URL to connect to
+  -p, --port      The port to connect to. Default is 22
+  -H, --use-tls   Whether or not we should use TLS`
+          );
 }
 
 
