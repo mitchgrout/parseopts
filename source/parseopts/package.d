@@ -20,17 +20,14 @@ enum Config
     ///i.e. -i 1 -j 1 cannot be packed as -ij 1.
 	bundling = 1 << 0,
 
-	///Arguments that are not recognized are ignored without error,
-	///e.g. if --flag is not a known flag, no error is raised.
-    passThrough = 1 << 1,
+    ///Indicates that the parser should skip any flags which do not match
+    ///any known flags.
+    skipUnknownFlags = 1 << 1,
 
-	///Indicates that the parser should throw an exception and stop when
-	///it encounters the first item that does not look like an option,
-	///e.g. ["--flag", "value", "badoption"] will throw an exception
-	///when "badoption" is reached.
-	stopOnNonOption = 1 << 2,
-
-	///Parsed arguments will be replaced with null when they are used.
+    ///Indicates that the parser should skip any non-flag arguments
+    skipUnknownArgs = 1 << 2,
+	
+    ///Parsed arguments will be replaced with null when they are used.
 	consume = 1 << 3,
 }
 
@@ -50,13 +47,12 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 {
 	import std.regex : ctRegex, match, regex;
 	import std.meta : ApplyLeft;
-    debug import std.stdio;
 
 	//Add a custom version to decide between compile-time regexes (memory intensive)
     //or simpler runtime regexes
     version(all) 
 	{
-		alias regShortFlag = ctRegex!`^\-[a-zA-Z]+$`; //originally [\w\d]
+		alias regShortFlag = ctRegex!`^\-[a-zA-Z]+$`;
 		alias regLongFlag = ctRegex!`^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`;
 	}
 	else
@@ -72,14 +68,14 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 
 	//Remove the first entry if it does not look like an option
 	//Assumed to be the ./programname entry in the args
-	if(args && !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
+	if(args.length && !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		args = args[1..$];
 
     //Extract flags
 	bool hasBundling = !!(Config.bundling & cfg);
-	bool hasPassThrough = !!(Config.passThrough & cfg);
-	bool shouldStopOnNonOption = !!(Config.stopOnNonOption & cfg);
-	bool shouldConsume = !!(Config.consume & cfg);
+    bool shouldSkipUnknownFlags = !!(Config.skipUnknownFlags & cfg);
+    bool shouldSkipUnknownArgs = !!(Config.skipUnknownArgs & cfg);
+    bool shouldConsume = !!(Config.consume & cfg);
 
     //Pass over all required args and determine if args contains all of them
     alias requiredArgs = Filter!(ApplyLeft!(isRequired, Type), __traits(allMembers, Type));
@@ -117,12 +113,6 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		import std.traits : hasUDA, getUDAs;
 		import std.meta : Alias, Filter;
 
-        debug
-        {
-            import std.stdio : writeln;
-            writeln(flag, " - ", value);
-        }
-
         flag_switch:
 		switch(flag)
 		{
@@ -152,8 +142,9 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 			}
 
 			default:
-				if(hasPassThrough)
-					return; //Return instead of break to avoid consuming args even though they're invalid
+				if(shouldSkipUnknownFlags)
+                    //Return instead of break to avoid consuming args even though they're invalid
+					return;
 				else
 					throw new ParserException(`Unknown flag "%s"`.format(flag));
 		}
@@ -166,12 +157,15 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	{
 		import std.format : format;
 
-		//Passthrough
 		if(!args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		{
-			if(hasPassThrough)
-				continue;
-			else
+            //Skip them
+			if(shouldSkipUnknownArgs)
+            {
+                args = args[1..$];
+                continue;
+            }
+            else
 				throw new ParserException(`Invalid argument: "%s"`.format(args[0]));
 		}
 
@@ -207,7 +201,6 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
                 args[0] = result.length <= 1? null : result;
 		
             args = args[1..$];
-
             continue;
 		}
 
@@ -270,7 +263,11 @@ template helpText(Type, size_t bufferWidth = 80)
 }
 
 
-///Default configuration for the parser
+///Commonly used by unittests, so brought in as a private import
+version(unittest) import std.exception;
+
+
+///Test Config.none
 unittest
 {
     enum Colour { white, red, blue, green }
@@ -298,8 +295,6 @@ unittest
 ///Test Config.bundling
 unittest
 {
-    import std.exception;
-
     struct TestConfig
     {
         @shortFlag('a') bool a;
@@ -317,3 +312,75 @@ unittest
     assertThrown!ParserException(parseOpts!TestConfig(["-abcd"], Config.bundling));
 }
 
+
+///Test Config.skipUnknownFlags
+unittest
+{
+    struct TestConfig
+    {
+        int a, b, c;
+    }
+
+    assertThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--unknown", "7"]));
+
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--unknown", "7"], Config.skipUnknownFlags));               
+}
+
+
+///Test Config.skipUnknownArgs
+unittest
+{
+    struct TestConfig
+    {
+        int a, b, c;
+    }
+
+    assertThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "unknown", "data"]));
+
+    assertNotThrown(parseOpts!TestConfig(["--a", "1", "--b", "2", "unknown", "data"], Config.skipUnknownArgs));
+}
+
+
+///Test Config.consume
+unittest
+{
+    import std.algorithm : all;
+
+    struct TestConfig
+    {
+        string path;
+        bool verbose;
+        @shortFlag('O') int optLevel;
+    }
+
+    {
+        string[] args = ["--path", "/root/", "-O", "7"];
+        assert(parseOpts!TestConfig(args, Config.consume) == TestConfig("/root/", false, 7));
+        assert(args.all!(k => k is null));
+    }
+}
+
+
+///Test the @required attribute
+version(none) unittest
+{
+    import std.exception;
+
+    struct TestConfig
+    {
+        int a;
+        int b;
+        int c;
+        @required int d;
+    }
+
+    assertNotThrown!ParserException(
+    {
+        cast(void)parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]);
+    });
+
+    assertThrown!ParserException(
+    {
+        cast(void)parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "1"]);
+    });
+}
