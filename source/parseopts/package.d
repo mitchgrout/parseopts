@@ -325,15 +325,15 @@ unittest
         @longFlag("recurse") bool shouldRecurse;
         @shortFlag('c') @longFlag("color") Colour textColour;
     }
-	
-    auto obj = parseOpts!TestConfig(["./prog", "--all", "-v", "10", "--recurse"]);
-	assert(obj == TestConfig(true, 10, null, true, Colour.white));
 
-	obj = parseOpts!TestConfig(["--recurse", "-c", "green", "-v", "-1"]);
-	assert(obj == TestConfig(false, -1, null, true, Colour.green));
+    assert(["./prog", "--all", "-v", "10", "--recurse"].parseOpts!TestConfig ==
+           TestConfig(true, 10, null, true, Colour.white));
 
-	obj = parseOpts!TestConfig(["./prog", "--path", "/tmp/"]);
-	assert(obj == TestConfig(false, 0, "/tmp/", false, Colour.white));
+	assert(["--recurse", "-c", "green", "-v", "-1"].parseOpts!TestConfig ==
+	       TestConfig(false, -1, null, true, Colour.green));
+
+    assert(["./prog", "--path", "/tmp/"].parseOpts!TestConfig ==
+	       TestConfig(false, 0, "/tmp/", false, Colour.white));
 }
 
 
@@ -348,13 +348,13 @@ unittest
         @shortFlag('d') int d;
     }
 
-    assert(parseOpts!TestConfig(["-a", "-b", "-c"]) == TestConfig(true, true, true, 0));
+    assert(["-a", "-b", "-c"].parseOpts!TestConfig == TestConfig(true, true, true, 0));
 
-    assert(parseOpts!TestConfig(["-abc"], Config.bundling) == TestConfig(true, true, true, 0));
+    assert(["-abc"].parseOpts!TestConfig(Config.bundling) == TestConfig(true, true, true, 0));
     
-    assert(parseOpts!TestConfig(["-cab"], Config.bundling) == TestConfig(true, true, true, 0));
+    assert(["-cab"].parseOpts!TestConfig(Config.bundling) == TestConfig(true, true, true, 0));
 
-    assertThrown!ParserException(parseOpts!TestConfig(["-abcd"], Config.bundling));
+    assertThrown!ParserException(["-abcd"].parseOpts!TestConfig(Config.bundling));
 }
 
 
@@ -366,9 +366,10 @@ unittest
         int a, b, c;
     }
 
-    assertThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--unknown", "7"]));
+    assertThrown!ParserException(["--a", "1", "--b", "2", "--unknown", "7"].parseOpts!TestConfig);
 
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--unknown", "7"], Config.skipUnknownFlags));               
+    assertNotThrown!ParserException(["--a", "1", "--b", "2", "--unknown", "7"]
+                                        .parseOpts!TestConfig(Config.skipUnknownFlags));
 }
 
 
@@ -380,9 +381,9 @@ unittest
         int a, b, c;
     }
 
-    assertThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "unknown", "data"]));
+    assertThrown!ParserException(["--a", "1", "--b", "2", "unknown", "data"].parseOpts!TestConfig);
 
-    assertNotThrown(parseOpts!TestConfig(["--a", "1", "--b", "2", "unknown", "data"], Config.skipUnknownArgs));
+    assertNotThrown(["--a", "1", "--b", "2", "unknown", "data"].parseOpts!TestConfig(Config.skipUnknownArgs));
 }
 
 
@@ -400,7 +401,7 @@ unittest
 
     {
         string[] args = ["--path", "/root/", "-O", "7"];
-        assert(parseOpts!TestConfig(args, Config.consume) == TestConfig("/root/", false, 7));
+        assert(args.parseOpts!TestConfig(Config.consume) == TestConfig("/root/", false, 7));
         assert(args.all!(k => k is null));
     }
 }
@@ -417,9 +418,9 @@ version(none) unittest
         @required int d;
     }
 
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]));
+    assertNotThrown!ParserException(["--a", "1", "--b", "2", "--c", "3", "--d", "4"].parseOpts!TestConfig);
 
-    assertThrown!ParserException(parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "1"]));
+    assertThrown!ParserException(["--a", "12", "--b", "2", "--c", "1"].parseOpts!TestConfig);
 }
 
 
@@ -445,13 +446,13 @@ unittest
         string url;
     }
 
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--o", "2"]));
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--o", "3"]));
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--dir", "/dev/"]));
-    assertNotThrown!ParserException(parseOpts!TestConfig(["--url", "https://google.com/"]));
+    assertNotThrown!ParserException(["--o", "2"].parseOpts!TestConfig);
+    assertNotThrown!ParserException(["--o", "3"].parseOpts!TestConfig);
+    assertNotThrown!ParserException(["--dir", "/dev/"].parseOpts!TestConfig);
+    assertNotThrown!ParserException(["--url", "https://google.com/"].parseOpts!TestConfig);
 
-    assertThrown!ParserException(parseOpts!TestConfig(["--o", "-3"]));
-    assertThrown!ParserException(parseOpts!TestConfig(["--o", "47"]));
-    assertThrown!ParserException(parseOpts!TestConfig(["--dir", "NotADir"]));
-    assertThrown!ParserException(parseOpts!TestConfig(["--url", "file:///dev/null"]));
+    assertThrown!ParserException(["--o", "-3"].parseOpts!TestConfig);
+    assertThrown!ParserException(["--o", "47"].parseOpts!TestConfig);
+    assertThrown!ParserException(["--dir", "NotADir"].parseOpts!TestConfig);
+    assertThrown!ParserException(["--url", "file:///dev/null"].parseOpts!TestConfig);
 }
