@@ -56,5 +56,5 @@ struct ServerConfig
 ## Todo:
 - [x] Implement the `required` attribute
 - [x] Implement help text generation
-- [ ] Add invariants to members to control the values they can take
+- [x] Add invariants to members to control the values they can take
 - [ ] Ensure that parsing adheres to the POSIX syntax
