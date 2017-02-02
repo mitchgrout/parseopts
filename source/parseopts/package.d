@@ -132,12 +132,23 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 				//the default flag is just --varName
 				case getLongFlag!(Type, varName):
 					static if(is(SymbolType == bool))
-						__traits(getMember, res, varName) = true;
+						bool toSet = (value is null)? true : value.to!bool;
 					else static if(is(SymbolType == string))
-						__traits(getMember, res, varName) = value;
+                        string toSet = value;
 					else
-						try __traits(getMember, res, varName) = value.to!(SymbolType);
-					    catch(Exception) throw new ParserException("Could not convert "~value~ "to an int");
+                    {
+                        SymbolType toSet;
+						try toSet = value.to!(SymbolType);
+					    catch(Exception) throw new ParserException("Could not convert "~value~" to "~SymbolType.stringof);
+                    }
+
+                    alias preds = getInvariants!(Type, varName);
+                    foreach(pred; preds)
+                    {
+                        if(!pred(toSet))
+                            throw new ParserException("Value %s did not satisfy the predicates for %s".format(value, varName));
+                    }
+                    __traits(getMember, res, varName) = toSet;
                     break flag_switch;
 			}
 
@@ -286,7 +297,7 @@ unittest
         @help("Whether or not we should use TLS")
         @shortFlag('H') @longFlag("use-tls") bool useTLS; 
     }
-
+    
     assert(helpText!ProgramConfig ==
 `Curl-like utility program
 
@@ -398,8 +409,6 @@ unittest
 ///Test the @required attribute
 version(none) unittest
 {
-    import std.exception;
-
     struct TestConfig
     {
         int a;
@@ -408,13 +417,41 @@ version(none) unittest
         @required int d;
     }
 
-    assertNotThrown!ParserException(
-    {
-        cast(void)parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]);
-    });
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--a", "1", "--b", "2", "--c", "3", "--d", "4"]));
 
-    assertThrown!ParserException(
+    assertThrown!ParserException(parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "1"]));
+}
+
+
+///Test the @verify attribute
+unittest
+{
+    import std.regex;
+
+    enum urlRegex = ctRegex!`https?:\/\/.*`;
+
+    struct TestConfig
     {
-        cast(void)parseOpts!TestConfig(["--a", "12", "--b", "2", "--c", "1"]);
-    });
+        //Any number of predicates can be stored in a single @verify
+        @verify!(k => k > 0, k => k < 4)
+        int o;
+    
+        //However, they can also be split across multiple @verify
+        @verify!(s => s[0] == '/')
+        @verify!(s => s[$-1] == '/')
+        string dir;
+    
+        @verify!(s => s.match(urlRegex))
+        string url;
+    }
+
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--o", "2"]));
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--o", "3"]));
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--dir", "/dev/"]));
+    assertNotThrown!ParserException(parseOpts!TestConfig(["--url", "https://google.com/"]));
+
+    assertThrown!ParserException(parseOpts!TestConfig(["--o", "-3"]));
+    assertThrown!ParserException(parseOpts!TestConfig(["--o", "47"]));
+    assertThrown!ParserException(parseOpts!TestConfig(["--dir", "NotADir"]));
+    assertThrown!ParserException(parseOpts!TestConfig(["--url", "file:///dev/null"]));
 }

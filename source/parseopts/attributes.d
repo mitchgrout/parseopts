@@ -43,3 +43,10 @@ struct ignore { }
 
 ///Indicates that a field must be filled out in the command line
 struct required { }
+
+
+///Represents a set of invariants that a variable must satisfy.
+///Each entry of preds must be a unary predicate function.
+///The value passed to each of the predicates will be the value
+///which is about to be set to the corresponding variable
+struct verify(preds...) { }

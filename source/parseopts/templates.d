@@ -1,7 +1,7 @@
 module parseopts.templates;
 
 import parseopts.attributes;
-import std.traits : hasUDA, getUDAs;
+import std.traits : hasUDA, getUDAs, staticMap, TemplateArgsOf;
 import std.meta : Alias;
 
 
@@ -19,6 +19,15 @@ template isRequired(Type, string symbol)
     if(isOption!(Type, symbol))
 {
     enum isRequired = hasUDA!(getSymbol!(Type, symbol), required);
+}
+
+
+///Get the set of predicates belonging to Type.symbol
+template getInvariants(Type, string symbol)
+    if(isOption!(Type, symbol))
+{
+    alias item = getSymbol!(Type, symbol);
+    alias getInvariants = staticMap!(TemplateArgsOf, getUDAs!(item, verify));
 }
 
 
