@@ -10,8 +10,17 @@ alias getSymbol(Type, string symbol) = Alias!(__traits(getMember, Type, symbol))
 
 
 ///Determine if Type.symbol is an option
-enum isOption(Type, string symbol) = !hasUDA!(getSymbol!(Type, symbol), ignore) &&
-				     is(typeof(getSymbol!(Type, symbol) = typeof(getSymbol!(Type, symbol)).init));
+template isOption(Type, string symbol)
+    if(__traits(hasMember, Type, symbol))
+{
+    //This check determines if the given symbol is at all mutable, which includes determining
+    //if it is an enum / alias or a proper member variable.
+    static if(__traits(compiles, { Type t;
+                __traits(getMember, t, symbol) = typeof(__traits(getMember, t, symbol)).init; }))
+        enum isOption = !hasUDA!(getSymbol!(Type, symbol), ignore);
+    else
+        enum isOption = false;
+}
 
 
 ///Determine if Type.symbol has the required flag

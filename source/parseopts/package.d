@@ -42,13 +42,18 @@ class ParserException : Exception
 
 ///
 Type parseOpts(Type)(string[] args, Config cfg = Config.none)
-	if((is(Type == struct) && __traits(compiles, { Type t; })) ||
-	   (is(Type == class)  && __traits(compiles, new Type)))
+	if(!__traits(isNested, Type) &&
+            ((is(Type == struct) && __traits(compiles, { Type t; })) ||
+	         (is(Type == class)  && __traits(compiles, new Type))))
 {
 	import std.regex : ctRegex, match, regex;
-	import std.meta : ApplyLeft;
+	import std.meta : ApplyLeft, templateAnd;
 
-	//Add a custom version to decide between compile-time regexes (memory intensive)
+    //Type cannot be nested. See https://issues.dlang.org/show_bug.cgi?id=8850 for details.
+    //For some reason, the nested error gets hidden, and only the message that
+    //the given type doesnt match the declaration for parseOpts is printed.
+
+    //Add a custom version to decide between compile-time regexes (memory intensive)
     //or simpler runtime regexes
     version(all) 
 	{
@@ -77,8 +82,12 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
     bool shouldSkipUnknownArgs = !!(Config.skipUnknownArgs & cfg);
     bool shouldConsume = !!(Config.consume & cfg);
 
-    //Pass over all required args and determine if args contains all of them
-    alias requiredArgs = Filter!(ApplyLeft!(isRequired, Type), __traits(allMembers, Type));
+    //Get an AliasSeq of all options belonging to Type
+    alias options = Filter!(ApplyLeft!(isOption, Type), __traits(allMembers, Type));
+
+    //Get an AliasSeq of all required options belonging to Type
+    alias requiredArgs = Filter!(ApplyLeft!(isRequired, Type), options);
+
     static if(requiredArgs.length)
     {
         import std.algorithm : any, filter;
@@ -113,10 +122,9 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		import std.traits : hasUDA, getUDAs;
 		import std.meta : Alias, Filter;
 
-        flag_switch:
 		switch(flag)
 		{
-			/*static*/ foreach(varName; Filter!(ApplyLeft!(isOption, Type), __traits(allMembers, Type)))
+			/*static*/ foreach(varName; options)
 			{
 				alias symbol = getSymbol!(Type, varName);
 				alias SymbolType = typeof(symbol);
@@ -149,7 +157,10 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
                             throw new ParserException("Value %s did not satisfy the predicates for %s".format(value, varName));
                     }
                     __traits(getMember, res, varName) = toSet;
-                    break flag_switch;
+                    
+                    if(shouldConsume)
+                        flag = value = null;
+                    return;
 			}
 
 			default:
@@ -159,10 +170,6 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 				else
 					throw new ParserException(`Unknown flag "%s"`.format(flag));
 		}
-
-        //Nullify the items if configured to consume args
-		if(shouldConsume)
-			flag = value = null;
 	}
 
 	while(args.length)
@@ -455,4 +462,20 @@ unittest
     assertThrown!ParserException(["--o", "47"].parseOpts!TestConfig);
     assertThrown!ParserException(["--dir", "NotADir"].parseOpts!TestConfig);
     assertThrown!ParserException(["--url", "file:///dev/null"].parseOpts!TestConfig);
+}
+
+
+///Ensure that parseOpts can still be used with
+///member enums, aliases, and functions
+unittest
+{
+    static struct Foo
+    {
+        int i;
+        enum e = 1;
+        alias t = int;
+        void func() { }
+    }
+
+    assertNotThrown(["./prog"].parseOpts!Foo);
 }
