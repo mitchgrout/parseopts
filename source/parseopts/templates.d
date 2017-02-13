@@ -23,11 +23,69 @@ template isOption(Type, string symbol)
 }
 
 
+///
+unittest
+{
+    enum MyEnum { _ }
+
+    //Note: This is marked as static as it *contains a function*
+    //If the function is removed, the static keyword may be removed
+    static struct MyConfig
+    {
+        int i;
+        const(int) ci;
+        immutable(int) ii;
+
+        string s;
+        const(string) cs;
+        immutable(string) is_;
+
+        MyEnum e;
+        alias T = int;
+        enum C = 420;
+        void func() { }
+    }
+
+    //Mutable members are fine
+    static assert( isOption!(MyConfig, "i"));
+    //Const/Immutable are not
+    static assert(!isOption!(MyConfig, "ci"));
+    static assert(!isOption!(MyConfig, "ii"));
+
+    //Types with immutable members are fine
+    static assert( isOption!(MyConfig, "s"));
+    //Const/Immutable are not
+    static assert(!isOption!(MyConfig, "cs"));
+    static assert(!isOption!(MyConfig, "is_"));
+
+    //User-defined enums are fine
+    static assert( isOption!(MyConfig, "e"));
+    //Constants are not
+    static assert(!isOption!(MyConfig, "T"));
+    static assert(!isOption!(MyConfig, "C"));
+    static assert(!isOption!(MyConfig, "func"));
+}
+
+
 ///Determine if Type.symbol has the required flag
 template isRequired(Type, string symbol)
     if(isOption!(Type, symbol))
 {
     enum isRequired = hasUDA!(getSymbol!(Type, symbol), required);
+}
+
+
+///
+unittest
+{
+    struct MyConfig
+    {
+        @required int a;
+        int b;
+    }
+
+    static assert( isRequired!(MyConfig, "a"));
+    static assert(!isRequired!(MyConfig, "b"));
 }
 
 
@@ -62,11 +120,41 @@ template getLongFlag(Type, string symbol)
 }
 
 
+///
+unittest
+{
+    struct MyConfig
+    {
+        int a;
+        @longFlag("foo") int b;
+        @longFlag("42") int c;
+    }
+
+    static assert(getLongFlag!(MyConfig, "a") == "--a");
+    static assert(getLongFlag!(MyConfig, "b") == "--foo");
+    static assert(getLongFlag!(MyConfig, "c") == "--42");
+}
+
+
 ///Determine if Type.symbol has a short flag
 template hasShortFlag(Type, string symbol)
     if(isOption!(Type, symbol))
 {
     enum hasShortFlag = hasUDA!(getSymbol!(Type, symbol), shortFlag);
+}
+
+
+///
+unittest
+{
+    struct MyConfig
+    {
+        @shortFlag('a') int a;
+        int b;
+    }
+
+    static assert( hasShortFlag!(MyConfig, "a"));
+    static assert(!hasShortFlag!(MyConfig, "b"));
 }
 
 
@@ -84,6 +172,19 @@ template getShortFlag(Type, string symbol)
 }
 
 
+///
+unittest
+{
+    struct MyConfig
+    {
+        @shortFlag('a') int a;
+        int b;
+    }
+
+    static assert(getShortFlag!(MyConfig, "a") == "-a");
+}
+
+
 ///Get the help text associated with Type.symbol. If no help text
 ///is explicitly given, it will default to stating no text is available.
 template getHelpText(Type, string symbol)
@@ -93,4 +194,20 @@ template getHelpText(Type, string symbol)
 		enum getHelpText = getUDAs!(getSymbol!(Type, symbol), help)[0].value;
 	else
 		enum getHelpText = "no help text available";
+}
+
+
+///
+unittest
+{
+    struct MyConfig
+    {
+        @help("string 1") int a;
+        int b;
+        @help("string 3") int c;
+    }
+
+    static assert(getHelpText!(MyConfig, "a") == "string 1");
+    static assert(getHelpText!(MyConfig, "b") == "no help text available");
+    static assert(getHelpText!(MyConfig, "c") == "string 3");
 }
