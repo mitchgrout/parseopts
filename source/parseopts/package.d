@@ -32,7 +32,7 @@ enum Config
 }
 
 
-///
+///Thrown when the parser is provided handed input that it cannot deal with
 class ParserException : Exception
 {
 	import std.exception : basicExceptionCtors;
@@ -40,7 +40,8 @@ class ParserException : Exception
 }
 
 
-///
+///Returns a value of type Type which contains all the parsed arguments from args.
+///Due to https://issues.dlang.org/show_bug.cgi?id=8850, Type cannot be nested.
 Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	if(!__traits(isNested, Type) &&
             ((is(Type == struct) && __traits(compiles, { Type t; })) ||
@@ -53,17 +54,20 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
     //For some reason, the nested error gets hidden, and only the message that
     //the given type doesnt match the declaration for parseOpts is printed.
 
-    //Add a custom version to decide between compile-time regexes (memory intensive)
+
+    enum shortFlag = `^\-[a-zA-Z]+$`;
+    enum longFlag = `^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`;
+    //TODO: Add a custom version to decide between compile-time regexes (memory intensive)
     //or simpler runtime regexes
     version(all) 
 	{
-		alias regShortFlag = ctRegex!`^\-[a-zA-Z]+$`;
-		alias regLongFlag = ctRegex!`^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`;
+		alias regShortFlag = ctRegex!shortFlag;
+		alias regLongFlag = ctRegex!longFlag;
 	}
-	else
-	{
-		auto regShortFlag = regex(`^\-[a-zA-Z]+$`);
-		auto regLongFlag = regex(`^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`);
+    else
+    {
+		auto regShortFlag = regex(shortFlag);
+		auto regLongFlag = regex(longFlag);
 	}
 
     //Instantiate the config object
@@ -88,6 +92,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
     //Get an AliasSeq of all required options belonging to Type
     alias requiredArgs = Filter!(ApplyLeft!(isRequired, Type), options);
 
+    //Check required args if at all necessary
     static if(requiredArgs.length)
     {
         import std.algorithm : any, filter;
@@ -139,27 +144,40 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 				//All options will have a long flag. If they don't have @longFlag(string),
 				//the default flag is just --varName
 				case getLongFlag!(Type, varName):
-					static if(is(SymbolType == bool))
+					//Because we have to check the potential invariants,
+                    //every case should set a variable named `toSet`.
+                    //This will be the *parsed* value which will be used to
+                    //determine if the invariants are satisfied.
+                    
+                    static if(is(SymbolType == bool))
+                    {
 						bool toSet = (value is null)? true : value.to!bool;
-					else static if(is(SymbolType == string))
+                    }
+                    else static if(is(SymbolType == string))
+                    {
                         string toSet = value;
-					else
+                    }
+                    else
                     {
                         SymbolType toSet;
 						try toSet = value.to!(SymbolType);
 					    catch(Exception) throw new ParserException("Could not convert "~value~" to "~SymbolType.stringof);
                     }
 
-                    alias preds = getInvariants!(Type, varName);
-                    foreach(pred; preds)
+                    //Check that the `toSet` value satisfies all invariants
+                    foreach(pred; getInvariants!(Type, varName))
                     {
                         if(!pred(toSet))
                             throw new ParserException("Value %s did not satisfy the predicates for %s".format(value, varName));
                     }
+
+                    //If we got this far, the value met all our criteria
                     __traits(getMember, res, varName) = toSet;
-                    
+                   
+                    //Nullify the two args if configured to do so
                     if(shouldConsume)
                         flag = value = null;
+
                     return;
 			}
 
@@ -176,9 +194,9 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 	{
 		import std.format : format;
 
+        //Check if the current item actually looks like a flag or not
 		if(!args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		{
-            //Skip them
 			if(shouldSkipUnknownArgs)
             {
                 args = args[1..$];
@@ -205,8 +223,10 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
                 result ~= '-';
 			}
 
+            //Inspect each individual bundled flag
 			foreach(ref flag; args[0][1..$])
 			{
+                //Format it to look like a short flag
 				string properFlag = ['-', flag];
 				handle(properFlag, null);
 
@@ -438,6 +458,11 @@ unittest
 
     enum urlRegex = ctRegex!`https?:\/\/.*`;
 
+    static bool isDir(string s)
+    {
+        return s[0] == '/' && s[$-1] == '/';
+    }
+
     struct TestConfig
     {
         //Any number of predicates can be stored in a single @verify
@@ -445,8 +470,7 @@ unittest
         int o;
     
         //However, they can also be split across multiple @verify
-        @verify!(s => s[0] == '/')
-        @verify!(s => s[$-1] == '/')
+        @verify!isDir
         string dir;
     
         @verify!(s => s.match(urlRegex))
