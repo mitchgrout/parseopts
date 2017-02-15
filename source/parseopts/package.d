@@ -54,6 +54,8 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
     //For some reason, the nested error gets hidden, and only the message that
     //the given type doesnt match the declaration for parseOpts is printed.
 
+    //Marks the end of options in args
+    enum endOfOptions = "--";
 
     enum shortFlag = `^\-[a-zA-Z]+$`;
     enum longFlag = `^\-{2}(?:[a-zA-Z]+\-)*[a-zA-Z]+$`;
@@ -77,7 +79,8 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 
 	//Remove the first entry if it does not look like an option
 	//Assumed to be the ./programname entry in the args
-	if(args.length && !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
+	if(args.length && args[0] != endOfOptions &&
+       !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		args = args[1..$];
 
     //Extract flags
@@ -190,7 +193,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		}
 	}
 
-	while(args.length)
+	while(args.length && args[0] != endOfOptions)
 	{
 		import std.format : format;
 
@@ -502,4 +505,24 @@ unittest
     }
 
     assertNotThrown(["./prog"].parseOpts!Foo);
+}
+
+
+///Test that -- ends options list
+unittest
+{
+    struct TestConfig
+    {
+        int a, b, c;
+    }
+
+    assert(["./prog", "--", "foo", "bar"].parseOpts!TestConfig == TestConfig.init);
+    assert(["./prog", "--", "--a", "10"].parseOpts!TestConfig == TestConfig.init);
+    assert(["./prog", "--"].parseOpts!TestConfig == TestConfig.init);
+    assert(["--", "--a", "10"].parseOpts!TestConfig == TestConfig.init);
+    assert(["--"].parseOpts!TestConfig == TestConfig.init);
+
+    assert(["./prog", "--a", "10", "--", "--b", "20"].parseOpts!TestConfig == TestConfig(10, 0, 0));
+    assert(["--c", "42", "--a", "1337", "--", "some other stuff"].parseOpts!TestConfig
+                == TestConfig(1337, 0, 42));
 }
