@@ -83,6 +83,16 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
        !args[0].match(regShortFlag) && !args[0].match(regLongFlag))
 		args = args[1..$];
 
+    //Remove everything after endOfOptions and after
+    foreach(idx, value; args)
+    {
+        if(value == endOfOptions)
+        {
+            args = args[0..idx];
+            break;
+        }
+    }
+
     //Extract flags
 	bool hasBundling = !!(Config.bundling & cfg);
     bool shouldSkipUnknownFlags = !!(Config.skipUnknownFlags & cfg);
@@ -132,7 +142,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 
 		switch(flag)
 		{
-			/*static*/ foreach(varName; options)
+			foreach(varName; options)
 			{
 				alias symbol = getSymbol!(Type, varName);
 				alias SymbolType = typeof(symbol);
@@ -193,7 +203,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 		}
 	}
 
-	while(args.length && args[0] != endOfOptions)
+	while(args.length)
 	{
 		import std.format : format;
 
@@ -227,7 +237,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
 			}
 
             //Inspect each individual bundled flag
-			foreach(ref flag; args[0][1..$])
+			foreach(flag; args[0][1..$])
 			{
                 //Format it to look like a short flag
 				string properFlag = ['-', flag];
@@ -241,7 +251,7 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
             //If all that is left is "-", nullify the argument
             if(shouldConsume)
                 args[0] = result.length <= 1? null : result;
-		
+	
             args = args[1..$];
             continue;
 		}
