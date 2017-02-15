@@ -114,9 +114,9 @@ template getLongFlag(Type, string symbol)
                                        .format(Type.stringof, symbol, UDAlist.length));
 
     static if(UDAlist.length == 1)
-		enum getLongFlag = UDAlist[0].value;
+        enum getLongFlag = UDAlist[0].value;
     else
-		enum getLongFlag = "--" ~ symbol;
+        enum getLongFlag = "--" ~ symbol;
 }
 
 
@@ -190,10 +190,10 @@ unittest
 template getHelpText(Type, string symbol)
     if(isOption!(Type, symbol))
 {
-	static if(hasUDA!(getSymbol!(Type, symbol), help))
-		enum getHelpText = getUDAs!(getSymbol!(Type, symbol), help)[0].value;
-	else
-		enum getHelpText = "no help text available";
+    static if(hasUDA!(getSymbol!(Type, symbol), help))
+        enum getHelpText = getUDAs!(getSymbol!(Type, symbol), help)[0].value;
+    else
+        enum getHelpText = "no help text available";
 }
 
 

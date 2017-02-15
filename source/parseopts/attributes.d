@@ -4,23 +4,23 @@ module parseopts.attributes;
 ///Indicates that a field can be filled out using a flag of the form -x
 struct shortFlag
 {
-	this(char value)
-	{
-		this.value = ['-', value];
-	}
-	string value;
+    this(char value)
+    {
+        this.value = ['-', value];
+    }
+    string value;
 }
 
 
 ///Overrides the default long flag, which is --fieldName
 struct longFlag
 {
-	this(string value)
-	{
-		assert(value.length);
-		this.value = "--" ~ value;
-	}
-	string value;
+    this(string value)
+    {
+        assert(value.length);
+        this.value = "--" ~ value;
+    }
+    string value;
 }
 
 
@@ -28,12 +28,12 @@ struct longFlag
 ///type, and the help text for the flag when attached to the field
 struct help
 {
-	this(string value)
-	{
-		assert(value.length);
-		this.value = value;
-	}
-	string value;
+    this(string value)
+    {
+        assert(value.length);
+        this.value = value;
+    }
+    string value;
 }
 
 
