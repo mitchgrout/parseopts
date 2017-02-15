@@ -119,7 +119,13 @@ Type parseOpts(Type)(string[] args, Config cfg = Config.none)
                 //Match each arg with a unique id
                 foreach(idx, arg; requiredArgs)
                 {
-                    case arg:
+                    static if(hasShortFlag!(Type, arg))
+                    {
+                        case getShortFlag!(Type, arg):
+                            goto case getLongFlag!(Type, arg);
+                    }
+
+                    case getLongFlag!(Type, arg):
                         set[idx] = true;
                         break;
                 }
@@ -448,7 +454,7 @@ unittest
 
 
 ///Test the @required attribute
-version(none) unittest
+unittest
 {
     struct TestConfig
     {
@@ -535,4 +541,19 @@ unittest
     assert(["./prog", "--a", "10", "--", "--b", "20"].parseOpts!TestConfig == TestConfig(10, 0, 0));
     assert(["--c", "42", "--a", "1337", "--", "some other stuff"].parseOpts!TestConfig
                 == TestConfig(1337, 0, 42));
+}
+
+
+///Ensure that end-of-options respects @required
+unittest
+{
+    struct TestConfig
+    {
+        int a;
+        int b;
+        @required int c;
+    }
+
+    assertNotThrown!ParserException(["--c", "1", "--", "--b", "2"].parseOpts!TestConfig);
+    assertThrown!ParserException(["--b", "2", "--", "--c", "1"].parseOpts!TestConfig);
 }
